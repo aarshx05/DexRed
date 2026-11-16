@@ -186,8 +186,12 @@ def select_specialists(target_path: str = "target.toml", recon_path: str = "reco
     # From tech stack
     signal_text += " " + " ".join(recon.get("tech_stack", []))
 
-    # From auth methods
-    signal_text += " " + " ".join(recon.get("auth_methods", []))
+    # From auth methods (can be strings or dicts)
+    for auth in recon.get("auth_methods", []):
+        if isinstance(auth, str):
+            signal_text += " " + auth
+        elif isinstance(auth, dict):
+            signal_text += " " + " ".join(str(v) for v in auth.values())
 
     signal_lower = signal_text.lower()
 
