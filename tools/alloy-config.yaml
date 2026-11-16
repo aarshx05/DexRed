@@ -1,0 +1,53 @@
+# DexRed Model Alloy Configuration
+# Assign different models to different tasks for cost/quality optimization.
+# UCL study: mixing models gives +20% over single-model runs.
+#
+# The pipeline reads this to pick the right model per specialist/phase.
+
+# Recon phase: cheap + fast — just mapping endpoints, no exploitation
+recon:
+  model: claude-haiku-5-5
+  max_turns: 30
+  rationale: "Recon is mechanical — enumerate endpoints, check headers. Doesn't need a frontier model."
+
+# Specialist agents: strong model for exploitation
+specialists:
+  auth:
+    model: claude-opus-4-6
+    max_turns: 80
+    rationale: "JWT attacks and auth bypass need deep reasoning about token structures."
+  injection:
+    model: claude-opus-4-6
+    max_turns: 80
+    rationale: "Crafting injection payloads and understanding context (SQL vs NoSQL vs template) needs capability."
+  access_control:
+    model: claude-sonnet-5-5
+    max_turns: 60
+    rationale: "IDOR testing is systematic — enumerate IDs, compare responses. Sonnet handles this well."
+  ssrf:
+    model: claude-sonnet-5-5
+    max_turns: 60
+    rationale: "SSRF is pattern-matching on URL parameters. Sonnet is sufficient."
+  business_logic:
+    model: claude-opus-4-6
+    max_turns: 80
+    rationale: "Race conditions and logic flaws need creative reasoning about application state."
+  api_security:
+    model: claude-sonnet-5-5
+    max_turns: 60
+    rationale: "Header checks, CORS, data exposure — systematic, not creative."
+
+# Validation: cheapest model — just replay and judge
+validation:
+  model: claude-haiku-5-5
+  rationale: "Replay HTTP request and judge if response matches claimed vulnerability. Simple task."
+
+# SAST analysis: cheap model for parsing tool output
+sast:
+  model: claude-haiku-5-5
+  rationale: "Parse semgrep/bandit JSON output and prioritize findings. Structured task."
+
+# Default fallback
+default:
+  model: claude-opus-4-6
+  max_turns: 80
