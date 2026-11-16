@@ -162,13 +162,20 @@ echo ""
 
 RECON_CONTEXT=$(cat recon-results.json 2>/dev/null || echo '{}')
 
-SPEC_LIST="auth:auth-specialist:auth injection:injection-specialist:injection access:access-control-specialist:access_control ssrf:ssrf-specialist:ssrf logic:business-logic-specialist:business_logic api:api-security-specialist:api_security"
+# Dynamic specialist selection based on app_type + recon results
+echo "  Selecting specialists based on app_type=$METHODOLOGY and recon..."
+SPECIALISTS_JSON=$(python3 tools/specialist_selector.py target.toml recon-results.json 2>/dev/null || echo '[]')
+SPEC_COUNT=$(echo "$SPECIALISTS_JSON" | python3 -c "import sys,json;print(len(json.load(sys.stdin)))" 2>/dev/null || echo 0)
+echo "  Selected $SPEC_COUNT specialists"
+echo ""
 
 PIDS=()
 AGENT_NAMES=()
 
-for SPEC_ENTRY in $SPEC_LIST; do
-    IFS=':' read -r SPEC PROFILE ALLOY_KEY <<< "$SPEC_ENTRY"
+for SPEC_IDX in $(seq 0 $((SPEC_COUNT-1))); do
+    SPEC=$(echo "$SPECIALISTS_JSON" | python3 -c "import sys,json;d=json.load(sys.stdin);print(d[$SPEC_IDX]['name'])" 2>/dev/null)
+    PROFILE=$(echo "$SPECIALISTS_JSON" | python3 -c "import sys,json;d=json.load(sys.stdin);print(d[$SPEC_IDX]['profile'])" 2>/dev/null)
+    ALLOY_KEY=$(echo "$SPECIALISTS_JSON" | python3 -c "import sys,json;d=json.load(sys.stdin);print(d[$SPEC_IDX]['alloy_key'])" 2>/dev/null)
 
     SPEC_MODEL=$(get_model specialist "$ALLOY_KEY")
     SPEC_TURNS=$(get_turns specialist "$ALLOY_KEY")
