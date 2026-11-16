@@ -86,21 +86,16 @@ echo ""
 
 RECON_CONTEXT=$(cat recon-results.json 2>/dev/null || echo '{}')
 
-# Define specialists with their focused prompts
-declare -A SPECIALISTS
-SPECIALISTS=(
-  ["auth"]="You are an AUTHENTICATION specialist. Test ONLY: JWT attacks (alg:none, kid injection, weak secrets), session management, OAuth flows, password reset, OTP brute force. $(cat agents/specialists/auth-specialist.md 2>/dev/null || echo '')"
-  ["injection"]="You are an INJECTION specialist. Test ONLY: SQL injection, NoSQL injection ($ne/$gt/$regex operators), XSS (reflected/stored), SSTI, command injection. $(cat agents/specialists/injection-specialist.md 2>/dev/null || echo '')"
-  ["access"]="You are an ACCESS CONTROL specialist. Test ONLY: IDOR/BOLA (access other users resources by changing IDs), BFLA (access admin endpoints with regular user token), privilege escalation, mass assignment. $(cat agents/specialists/access-control-specialist.md 2>/dev/null || echo '')"
-  ["ssrf"]="You are an SSRF specialist. Test ONLY: Server-Side Request Forgery via any URL-accepting parameter. Test internal access (localhost, 127.0.0.1), cloud metadata (169.254.169.254), internal services. $(cat agents/specialists/ssrf-specialist.md 2>/dev/null || echo '')"
-  ["logic"]="You are a BUSINESS LOGIC specialist. Test ONLY: Race conditions, price/quantity manipulation, workflow bypass, coupon abuse, negative values, credit manipulation. $(cat agents/specialists/business-logic-specialist.md 2>/dev/null || echo '')"
-  ["api"]="You are an API SECURITY specialist. Test ONLY: Excessive data exposure, missing security headers, CORS misconfiguration, file upload issues, error information leakage, user enumeration. $(cat agents/specialists/api-security-specialist.md 2>/dev/null || echo '')"
-)
+# Specialist definitions — name:profile_file
+SPEC_LIST="auth:auth-specialist injection:injection-specialist access:access-control-specialist ssrf:ssrf-specialist logic:business-logic-specialist api:api-security-specialist"
 
 PIDS=()
 AGENT_NAMES=()
 
-for SPEC in "${!SPECIALISTS[@]}"; do
+for SPEC_ENTRY in $SPEC_LIST; do
+    SPEC="${SPEC_ENTRY%%:*}"
+    PROFILE="${SPEC_ENTRY##*:}"
+
     for RUN in $(seq 0 $((N-1))); do
         AGENT_NAME="${SPEC}-agent-${RUN}"
         FINDINGS_FILE="findings-${AGENT_NAME}.json"
@@ -108,16 +103,31 @@ for SPEC in "${!SPECIALISTS[@]}"; do
 
         echo "  Launching: $AGENT_NAME"
 
-        PROMPT="${SPECIALISTS[$SPEC]}
+        # Build prompt from profile file — avoids bash variable expansion issues
+        PROFILE_CONTENT=""
+        if [ -f "agents/specialists/${PROFILE}.md" ]; then
+            PROFILE_CONTENT=$(cat "agents/specialists/${PROFILE}.md")
+        fi
+
+        # Write prompt to temp file to avoid shell expansion of $ne/$gt etc.
+        PROMPT_FILE="/tmp/prompt-${AGENT_NAME}.txt"
+        cat > "$PROMPT_FILE" << PROMPTEOF
+You are a security specialist agent. Read your methodology below and test ONLY your specialty area.
+
+Target: $TARGET_URL
+You have $MAX_TURNS iterations. Write findings to $FINDINGS_FILE by writing JSON directly.
+Report ALL findings with full HTTP request/response proof.
+
+--- SPECIALIST METHODOLOGY ---
+$PROFILE_CONTENT
+--- END METHODOLOGY ---
 
 --- RECON RESULTS ---
 $RECON_CONTEXT
 --- END RECON ---
+PROMPTEOF
 
-Target: $TARGET_URL
-You have $MAX_TURNS iterations. Write findings to $FINDINGS_FILE using the report_finding MCP tool or by writing JSON directly.
-Report ALL findings with full HTTP request/response proof."
-
+        PROMPT=$(cat "$PROMPT_FILE")
         codex exec --trust -m "$MODEL" --dangerously-bypass-approvals-and-sandbox \
           "$PROMPT" > "$LOG_FILE" 2>&1 &
 
