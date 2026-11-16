@@ -32,6 +32,7 @@ ANTHROPIC_PATH = "/v1/messages"
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 DEFAULT_MODEL = "claude-opus-4-6"
 ANTHROPIC_VERSION = "2023-06-01"
+ANTHROPIC_BETA = "prompt-caching-2024-07-31"
 
 
 def responses_to_messages(body: dict) -> dict:
@@ -92,24 +93,42 @@ def responses_to_messages(body: dict) -> dict:
                             })
                         elif ctype == "function_call":
                             args = c.get("arguments", "{}")
+                            if isinstance(args, str) and args.strip():
+                                try:
+                                    parsed_args = json.loads(args)
+                                except json.JSONDecodeError:
+                                    parsed_args = {}
+                            elif isinstance(args, dict):
+                                parsed_args = args
+                            else:
+                                parsed_args = {}
                             parts.append({
                                 "type": "tool_use",
                                 "id": sanitize_id(c.get("call_id", c.get("id", ""))),
                                 "name": c.get("name", ""),
-                                "input": json.loads(args) if isinstance(args, str) else args,
+                                "input": parsed_args,
                             })
                 if parts:
                     messages.append({"role": "assistant", "content": parts})
 
         elif item_type == "function_call":
             args = item.get("arguments", "{}")
+            if isinstance(args, str) and args.strip():
+                try:
+                    parsed_args = json.loads(args)
+                except json.JSONDecodeError:
+                    parsed_args = {}
+            elif isinstance(args, dict):
+                parsed_args = args
+            else:
+                parsed_args = {}
             messages.append({
                 "role": "assistant",
                 "content": [{
                     "type": "tool_use",
                     "id": sanitize_id(item.get("call_id", item.get("id", ""))),
                     "name": item.get("name", ""),
-                    "input": json.loads(args) if isinstance(args, str) else args,
+                    "input": parsed_args,
                 }]
             })
 
@@ -415,6 +434,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 "Content-Type": "application/json",
                 "x-api-key": api_key,
                 "anthropic-version": ANTHROPIC_VERSION,
+                "anthropic-beta": ANTHROPIC_BETA,
                 "Accept": "text/event-stream",
             })
             resp = conn.getresponse()

@@ -44,8 +44,8 @@ runcmd:
   - GOBIN=/usr/local/bin /usr/local/go/bin/go install github.com/hahwul/dalfox/v2@latest
   - GOBIN=/usr/local/bin /usr/local/go/bin/go install github.com/tomnomnom/waybackurls@latest
 
-  # Install Python security packages
-  - pip3 install requests beautifulsoup4 pyjwt httpx aiohttp
+  # Install Python security packages + LiteLLM proxy
+  - pip3 install requests beautifulsoup4 pyjwt httpx aiohttp litellm
 
   # Install Rust + Codex
   - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y

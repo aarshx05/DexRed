@@ -92,6 +92,10 @@ scp -o StrictHostKeyChecking=no -q \
   azureuser@"$VM_IP":/home/azureuser/codexsec/tools/anthropic-bridge/
 
 scp -o StrictHostKeyChecking=no -q \
+  "$PROJECT_DIR/tools/litellm-config.yaml" \
+  azureuser@"$VM_IP":/home/azureuser/codexsec/tools/
+
+scp -o StrictHostKeyChecking=no -q \
   "$PROJECT_DIR/tools/orchestrator/server.py" \
   azureuser@"$VM_IP":/home/azureuser/codexsec/tools/orchestrator/
 

@@ -2,11 +2,7 @@
 # This config is loaded automatically when running Codex from this directory.
 
 # Sandbox: full network access for security testing.
-# Phase 2 will replace this with target-domain-only allowlisting.
 sandbox = "danger-full-access"
-
-# Auto-approve all tool calls for autonomous security testing.
-approval_policy = "full-auto"
 
 # Project documentation: load AGENTS.md (security methodology)
 project_doc_max_bytes = 65536
