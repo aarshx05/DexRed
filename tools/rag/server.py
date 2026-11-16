@@ -284,14 +284,59 @@ def _seed_techniques(db):
     db.commit()
 
 
+_tfidf_index = None
+
+def _get_tfidf_index(db):
+    """Lazily build the TF-IDF index on first semantic search."""
+    global _tfidf_index
+    if _tfidf_index is None:
+        try:
+            from embeddings import build_index_from_db
+            _tfidf_index = build_index_from_db(db)
+        except ImportError:
+            pass
+    return _tfidf_index
+
+
 def handle_search(db, params):
     query = params.get("query", "")
     category = params.get("category", "")
     limit = params.get("limit", 5)
+    use_semantic = params.get("semantic", True)
 
     if not query:
         return {"error": "query is required"}
 
+    # Try semantic search first (TF-IDF cosine similarity)
+    if use_semantic:
+        index = _get_tfidf_index(db)
+        if index and index.documents:
+            results = index.search(query, limit=limit)
+            if results:
+                filtered = results
+                if category:
+                    filtered = [(doc, score) for doc, score in results if doc.get("category") == category]
+                    if not filtered:
+                        filtered = results
+
+                return {
+                    "query": query,
+                    "total": len(filtered),
+                    "search_method": "semantic_tfidf",
+                    "techniques": [
+                        {
+                            "title": doc["title"],
+                            "category": doc["category"],
+                            "tags": doc.get("tags", ""),
+                            "content": doc["content"],
+                            "source": doc.get("source", ""),
+                            "relevance": round(score, 3),
+                        }
+                        for doc, score in filtered[:limit]
+                    ],
+                }
+
+    # Fallback to FTS5 keyword search
     fts_query = query.replace('"', '""')
     if category:
         fts_query = f'category:"{category}" AND ({fts_query})'

@@ -19,6 +19,7 @@
 
 mod config;
 mod agent;
+mod assemble;
 mod dedup;
 mod pipeline;
 

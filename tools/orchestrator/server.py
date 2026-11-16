@@ -29,6 +29,16 @@ try:
     USE_LLM_JUDGE = True
 except ImportError:
     USE_LLM_JUDGE = False
+
+try:
+    from shared_state import db as shared_db
+    _shared_conn = shared_db.get_shared_db()
+    AGENT_NAME = os.environ.get("DEXRED_AGENT_NAME", "default-agent")
+    shared_db.register_agent(_shared_conn, AGENT_NAME, os.environ.get("DEXRED_SPECIALIST", "general"))
+    USE_SHARED_STATE = True
+except ImportError:
+    USE_SHARED_STATE = False
+    _shared_conn = None
 import urllib.error
 from datetime import datetime, timezone, timedelta
 
@@ -435,6 +445,9 @@ def handle_report_finding(db, p):
     db.commit()
     export_findings_json(db)
 
+    if USE_SHARED_STATE and _shared_conn:
+        shared_db.publish_finding(_shared_conn, fid, title, severity, cwe, endpoint, AGENT_NAME, validated == 1)
+
     total = db.execute("SELECT COUNT(*) c FROM findings").fetchone()["c"]
     val_total = db.execute("SELECT COUNT(*) c FROM findings WHERE validated=1").fetchone()["c"]
     emoji = {"Critical": "!!!", "High": "!!", "Medium": "!", "Low": ".", "Informational": "i"}
@@ -588,6 +601,15 @@ def handle_add_endpoint(db, p):
                     ("discover_endpoint", url, "added", phase, ts))
         db.commit()
         total = db.execute("SELECT COUNT(*) c FROM endpoints").fetchone()["c"]
+
+        if USE_SHARED_STATE and _shared_conn:
+            shared_db.publish_endpoint(
+                _shared_conn, AGENT_NAME, url, method,
+                params=p.get("params", []),
+                auth_required=p.get("auth_required", False),
+                tags=p.get("tags", []),
+            )
+
         return {"status": "added", "url": url, "method": method, "total_endpoints": total}
     except sqlite3.IntegrityError:
         return {"status": "exists", "message": f"{method} {url} already tracked"}
@@ -610,6 +632,27 @@ def handle_validate_finding(db, p):
     db.commit()
     export_findings_json(db)
     return {"finding_id": fid, "title": row["title"], "validation": validation}
+
+
+def handle_get_shared_surface(db, p):
+    """Get endpoints and findings from ALL agents via the shared DB."""
+    if not USE_SHARED_STATE or not _shared_conn:
+        return {"status": "unavailable", "message": "Shared state not enabled (single-agent mode)"}
+
+    summary = shared_db.get_surface_summary(_shared_conn)
+    untested = shared_db.get_untested_endpoints(_shared_conn, AGENT_NAME, p.get("tags"))
+    existing = shared_db.get_existing_findings(_shared_conn)
+    agents = shared_db.get_agent_statuses(_shared_conn)
+
+    shared_db.heartbeat(_shared_conn, AGENT_NAME,
+        db.execute("SELECT COUNT(*) c FROM iterations").fetchone()["c"])
+
+    return {
+        "summary": summary,
+        "untested_for_you": untested[:20],
+        "all_findings": [{"severity": f["severity"], "title": f["title"], "endpoint": f["endpoint"], "agent": f["agent_name"]} for f in existing],
+        "other_agents": [{"name": a["agent_name"], "specialist": a["specialist"], "status": a["status"], "iteration": a["iteration"], "findings": a["findings_count"]} for a in agents if a["agent_name"] != AGENT_NAME],
+    }
 
 
 # ── MCP Tools Definition ─────────────────────────────────────────────────────
@@ -689,6 +732,16 @@ TOOLS = [
             "required": ["finding_id"],
         },
     },
+    {
+        "name": "get_shared_surface",
+        "description": "Get endpoints and findings discovered by ALL agents (multi-agent mode). Shows untested endpoints for you, what other agents found, and the shared tech stack. Use this to avoid duplicate work and find new targets.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tags": {"type": "array", "items": {"type": "string"}, "description": "Filter endpoints by tags (e.g. ['auth', 'idor_candidate'])"},
+            },
+        },
+    },
 ]
 
 HANDLERS = {
@@ -699,6 +752,7 @@ HANDLERS = {
     "get_attack_surface": handle_get_attack_surface,
     "add_endpoint": handle_add_endpoint,
     "validate_finding": handle_validate_finding,
+    "get_shared_surface": handle_get_shared_surface,
 }
 
 
