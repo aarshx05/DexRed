@@ -539,6 +539,11 @@ pub(crate) async fn run_turn(
     let mut next_step_context = Some(first_step_context);
     let mut guardian_budget_compacted = false;
     let mut unfinished_plan_id = None;
+
+    // DexRed: agent-loop-level security assessment monitors.
+    let mut dexred_stuck_detector = crate::security::stuck_detector::StuckDetector::new();
+    let mut dexred_circuit_breaker = crate::security::circuit_breaker::CircuitBreaker::new();
+
     loop {
         // Note that pending_input would be something like a message the user
         // submitted through the UI while the model was running. Though the UI
@@ -695,6 +700,28 @@ pub(crate) async fn run_turn(
                         .await;
                 }
                 can_drain_pending_input = true;
+
+                // DexRed: update stuck detector after each sampling iteration.
+                dexred_stuck_detector.record_iteration("", "", !model_needs_follow_up);
+                match dexred_stuck_detector.check() {
+                    crate::security::stuck_detector::StuckAction::Warn(w) => {
+                        tracing::warn!(
+                            "[DexRed] Stuck detected ({}): {}",
+                            match w.kind {
+                                crate::security::stuck_detector::StuckKind::SameEndpoint => "same_endpoint",
+                                crate::security::stuck_detector::StuckKind::ErrorLoop => "error_loop",
+                                crate::security::stuck_detector::StuckKind::NoProgress => "no_progress",
+                                crate::security::stuck_detector::StuckKind::TechniqueExhaustion => "technique_exhaustion",
+                            },
+                            w.message,
+                        );
+                    }
+                    crate::security::stuck_detector::StuckAction::Restart(reason) => {
+                        tracing::error!("[DexRed] Restart requested: {}", reason);
+                    }
+                    crate::security::stuck_detector::StuckAction::Continue => {}
+                }
+
                 // Process async hooks only after sampling and its tools have finished.
                 drain_async_hook_results(&sess, &turn_context, /*before_user_prompt*/ false).await;
                 let (has_pending_input, token_status) = async {
