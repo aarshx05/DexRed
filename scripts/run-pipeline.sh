@@ -1,56 +1,133 @@
 #!/usr/bin/env bash
 # DexRed Multi-Agent Pipeline
-# Usage: ./scripts/run-pipeline.sh [model] [n_per_specialist]
+# Usage: ./scripts/run-pipeline.sh [model_override] [n_per_specialist]
 #
-# This is DexRed's primary run mode. It:
-# 1. Starts LiteLLM proxy
-# 2. Runs a recon agent to map the attack surface
-# 3. Launches specialist agents in parallel (auth, injection, access control, SSRF, business logic, API)
-# 4. Each specialist gets recon results + its focused methodology
-# 5. Collects and deduplicates findings across all agents
+# Fully integrated pipeline:
+# 1. Reads target.toml for methodology (blackbox/whitebox/greybox)
+# 2. If whitebox: runs SAST first, feeds static findings to specialists
+# 3. Recon agent maps the attack surface
+# 4. Specialist agents run in parallel with model alloy (right model per task)
+# 5. Collects, deduplicates, and generates HTML report
 #
-# Requires: ANTHROPIC_API_KEY set in environment
+# Requires: ANTHROPIC_API_KEY set in environment (or LITELLM_MASTER_KEY)
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+PIPELINE_START=$(date +%s)
 
-MODEL="${1:-claude-opus-4-6}"
-N="${2:-1}"  # agents per specialist
-MAX_TURNS=80
-RECON_TURNS=30
+MODEL_OVERRIDE="${1:-}"
+N="${2:-1}"
 
 if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
     echo "ERROR: ANTHROPIC_API_KEY not set"
     exit 1
 fi
 
-echo "========================================"
-echo "  DexRed Multi-Agent Pipeline"
-echo "  Model: $MODEL"
-echo "  Agents per specialist: $N"
-echo "  Max turns per agent: $MAX_TURNS"
-echo "========================================"
+# ── Read target config ──────────────────────────────────────────────────────
 
-# Clean previous state
-rm -f state.db findings-*.json recon-results.json merged-findings.json 2>/dev/null
-
-# Read target
-TARGET_URL=$(python3 -c "
+eval "$(python3 -c "
 import tomllib
 with open('target.toml', 'rb') as f:
     c = tomllib.load(f)
-d = c.get('target', {}).get('domains', ['localhost:8888'])[0]
-print(f'http://{d}' if not d.startswith('http') else d)
-")
-echo "Target: $TARGET_URL"
+t = c.get('target', {})
+d = t.get('domains', ['localhost:8888'])[0]
+url = f'http://{d}' if not d.startswith('http') else d
+print(f'TARGET_URL=\"{url}\"')
+print(f'METHODOLOGY=\"{t.get(\"methodology\", \"blackbox\")}\"')
+print(f'SOURCE_PATH=\"{c.get(\"target\", {}).get(\"context\", {}).get(\"source_code_path\", \"\")}\"')
+")"
+
+# ── Model alloy: get model per task ─────────────────────────────────────────
+
+get_model() {
+    local task="$1"
+    local specialist="${2:-}"
+    if [ -n "$MODEL_OVERRIDE" ]; then
+        echo "$MODEL_OVERRIDE"
+        return
+    fi
+    python3 -c "
+import sys; sys.path.insert(0, 'tools')
+from alloy import get_model
+m, _ = get_model('$task', '$specialist')
+print(m)
+" 2>/dev/null || echo "claude-opus-4-6"
+}
+
+get_turns() {
+    local task="$1"
+    local specialist="${2:-}"
+    python3 -c "
+import sys; sys.path.insert(0, 'tools')
+from alloy import get_model
+_, t = get_model('$task', '$specialist')
+print(t)
+" 2>/dev/null || echo "80"
+}
+
+RECON_MODEL=$(get_model recon)
+RECON_TURNS=$(get_turns recon)
+
+echo "========================================"
+echo "  DexRed Multi-Agent Pipeline"
+echo "  Target: $TARGET_URL"
+echo "  Methodology: $METHODOLOGY"
+echo "  Recon model: $RECON_MODEL"
+echo "  Agents per specialist: $N"
+if [ -n "$MODEL_OVERRIDE" ]; then
+    echo "  Model override: $MODEL_OVERRIDE (alloy disabled)"
+fi
+echo "========================================"
+
+# Clean previous state
+rm -f state.db findings-*.json recon-results.json merged-findings.json sast-findings.json report.html 2>/dev/null
+
+# ── Phase 0: SAST (whitebox/greybox only) ──────────────────────────────────
+
+SAST_CONTEXT=""
+if [ "$METHODOLOGY" = "whitebox" ] || [ "$METHODOLOGY" = "greybox" ]; then
+    if [ -n "$SOURCE_PATH" ] && [ -d "$SOURCE_PATH" ]; then
+        echo ""
+        echo "[Phase 0] SAST — static analysis on source code"
+        echo "  Source: $SOURCE_PATH"
+        echo ""
+
+        SAST_MODEL=$(get_model sast)
+        python3 -c "
+import sys; sys.path.insert(0, 'tools/sast')
+from analyzer import run_sast
+import json
+result = run_sast('$SOURCE_PATH')
+print(json.dumps(result, indent=2))
+" 2>/dev/null | tee /tmp/sast-summary.json || true
+
+        if [ -f sast-findings.json ]; then
+            SAST_COUNT=$(python3 -c "import json;print(len(json.load(open('sast-findings.json')).get('findings',[])))" 2>/dev/null || echo 0)
+            echo "  SAST found $SAST_COUNT static findings"
+
+            SAST_CONTEXT=$(python3 -c "
+import json
+data = json.load(open('sast-findings.json'))
+findings = data.get('findings', [])[:20]
+lines = []
+for f in findings:
+    lines.append(f\"{f.get('severity','?')}: {f.get('message','')[:80]} ({f.get('file','')}:{f.get('line',0)})\")
+print('\n'.join(lines))
+" 2>/dev/null || echo "")
+        fi
+    else
+        echo ""
+        echo "[Phase 0] SAST skipped — source_code_path not set or not found"
+    fi
+fi
 
 # ── Phase 1: Recon ──────────────────────────────────────────────────────────
 
 echo ""
-echo "[Phase 1] Recon — mapping attack surface ($RECON_TURNS turns)"
+echo "[Phase 1] Recon — mapping attack surface (model: $RECON_MODEL, $RECON_TURNS turns)"
 echo ""
 
-codex exec --trust -m "$MODEL" --dangerously-bypass-approvals-and-sandbox \
+codex exec --trust -m "$RECON_MODEL" --dangerously-bypass-approvals-and-sandbox \
   "You are a RECON-ONLY agent. Your job is to MAP the attack surface of $TARGET_URL, NOT exploit it.
 
 1. Discover ALL API endpoints using curl, directory bruting, and manual crawling
@@ -69,7 +146,6 @@ When done, write results to recon-results.json:
 Create at least 2 test user accounts and capture their auth tokens. DO NOT test for vulnerabilities." \
   > recon.log 2>&1 || true
 
-# Check if recon produced results
 if [ ! -f recon-results.json ]; then
     echo "WARNING: Recon didn't produce recon-results.json, creating minimal version"
     echo '{"endpoints":[],"tech_stack":[],"auth_methods":[],"users":[]}' > recon-results.json
@@ -86,36 +162,35 @@ echo ""
 
 RECON_CONTEXT=$(cat recon-results.json 2>/dev/null || echo '{}')
 
-# Specialist definitions — name:profile_file
-SPEC_LIST="auth:auth-specialist injection:injection-specialist access:access-control-specialist ssrf:ssrf-specialist logic:business-logic-specialist api:api-security-specialist"
+SPEC_LIST="auth:auth-specialist:auth injection:injection-specialist:injection access:access-control-specialist:access_control ssrf:ssrf-specialist:ssrf logic:business-logic-specialist:business_logic api:api-security-specialist:api_security"
 
 PIDS=()
 AGENT_NAMES=()
 
 for SPEC_ENTRY in $SPEC_LIST; do
-    SPEC="${SPEC_ENTRY%%:*}"
-    PROFILE="${SPEC_ENTRY##*:}"
+    IFS=':' read -r SPEC PROFILE ALLOY_KEY <<< "$SPEC_ENTRY"
+
+    SPEC_MODEL=$(get_model specialist "$ALLOY_KEY")
+    SPEC_TURNS=$(get_turns specialist "$ALLOY_KEY")
 
     for RUN in $(seq 0 $((N-1))); do
         AGENT_NAME="${SPEC}-agent-${RUN}"
         FINDINGS_FILE="findings-${AGENT_NAME}.json"
         LOG_FILE="agent-${AGENT_NAME}.log"
 
-        echo "  Launching: $AGENT_NAME"
+        echo "  Launching: $AGENT_NAME (model: $SPEC_MODEL, ${SPEC_TURNS} turns)"
 
-        # Build prompt from profile file — avoids bash variable expansion issues
         PROFILE_CONTENT=""
         if [ -f "agents/specialists/${PROFILE}.md" ]; then
             PROFILE_CONTENT=$(cat "agents/specialists/${PROFILE}.md")
         fi
 
-        # Write prompt to temp file to avoid shell expansion of $ne/$gt etc.
         PROMPT_FILE="/tmp/prompt-${AGENT_NAME}.txt"
         cat > "$PROMPT_FILE" << PROMPTEOF
 You are a security specialist agent. Read your methodology below and test ONLY your specialty area.
 
 Target: $TARGET_URL
-You have $MAX_TURNS iterations. Write findings to $FINDINGS_FILE by writing JSON directly.
+You have $SPEC_TURNS iterations. Write findings to $FINDINGS_FILE by writing JSON directly.
 Report ALL findings with full HTTP request/response proof.
 
 --- SPECIALIST METHODOLOGY ---
@@ -127,8 +202,17 @@ $RECON_CONTEXT
 --- END RECON ---
 PROMPTEOF
 
+        if [ -n "$SAST_CONTEXT" ]; then
+            cat >> "$PROMPT_FILE" << SASTEOF
+
+--- SAST STATIC FINDINGS (confirm these dynamically) ---
+$SAST_CONTEXT
+--- END SAST ---
+SASTEOF
+        fi
+
         PROMPT=$(cat "$PROMPT_FILE")
-        codex exec --trust -m "$MODEL" --dangerously-bypass-approvals-and-sandbox \
+        codex exec --trust -m "$SPEC_MODEL" --dangerously-bypass-approvals-and-sandbox \
           "$PROMPT" > "$LOG_FILE" 2>&1 &
 
         PIDS+=($!)
@@ -140,7 +224,6 @@ echo ""
 echo "  ${#PIDS[@]} agents launched. Waiting for completion..."
 echo ""
 
-# Wait for all agents
 COMPLETED=0
 FAILED=0
 for i in "${!PIDS[@]}"; do
@@ -156,17 +239,25 @@ done
 echo ""
 echo "  $COMPLETED completed, $FAILED failed"
 
-# ── Phase 3: Collect and Deduplicate ────────────────────────────────────────
+# ── Phase 3: Collect, Deduplicate, Report ───────────────────────────────────
 
 echo ""
-echo "[Phase 3] Collecting and deduplicating findings"
+echo "[Phase 3] Collecting, deduplicating, and generating report"
 echo ""
 
 python3 tools/dedup.py
 
+# Generate HTML report
+python3 tools/report/generate.py merged-findings.json report.html 2>/dev/null || true
+
+PIPELINE_END=$(date +%s)
+DURATION=$((PIPELINE_END - PIPELINE_START))
+
 echo ""
 echo "========================================"
 echo "  DexRed Pipeline Complete"
+echo "  Duration: ${DURATION}s"
+echo "  Report: report.html"
 echo "========================================"
 cat merged-findings.json 2>/dev/null | python3 -c "
 import sys, json

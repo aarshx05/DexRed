@@ -86,6 +86,31 @@ When you discover a vulnerability, use the `report_finding` tool OR output a fin
 [How to fix it]
 ```
 
+## Whitebox mode (when methodology = "whitebox" or "greybox")
+
+When source code is available, combine static and dynamic analysis:
+
+### Phase 0: Static analysis
+1. Call `run_sast` with the source_code_path from target.toml
+2. Review the SAST findings — prioritize CRITICAL and ERROR severity
+3. For each static finding, plan a dynamic test to confirm exploitability
+
+### Static → Dynamic confirmation workflow
+For each SAST finding:
+1. Read the code at the file:line indicated — understand the vulnerability pattern
+2. Identify the corresponding HTTP endpoint (trace from code to route)
+3. Craft an HTTP request that triggers the vulnerability
+4. If exploitation succeeds, call `confirm_sast_finding` with the exploit proof
+5. Report it as a confirmed finding with both the static evidence (code) and dynamic evidence (HTTP)
+
+### SAST tools available
+- `run_sast`: Auto-runs Semgrep + Bandit (Python) + TruffleHog (secrets)
+- `get_sast_findings`: Filter by severity, CWE, or file
+- `confirm_sast_finding`: Mark a static finding as dynamically confirmed
+
+### When SAST findings are provided in your prompt
+If you see a "SAST STATIC FINDINGS" section in your prompt, those are pre-scanned static analysis results. Your job is to CONFIRM them dynamically — craft exploit requests that prove the vulnerability is real, not just a code pattern.
+
 ## Stuck recovery
 
 If you have made no progress for 5 consecutive tool calls:
