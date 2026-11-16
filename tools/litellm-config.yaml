@@ -1,4 +1,5 @@
 model_list:
+  # ── Cloud models (Anthropic) ──
   - model_name: claude-opus-4-6
     litellm_params:
       model: anthropic/claude-opus-4-6
@@ -14,21 +15,36 @@ model_list:
       model: anthropic/claude-sonnet-5-5
       api_key: os.environ/ANTHROPIC_API_KEY
 
-  - model_name: claude-sonnet-4-6
-    litellm_params:
-      model: anthropic/claude-sonnet-4-6
-      api_key: os.environ/ANTHROPIC_API_KEY
-
   - model_name: claude-haiku-5-5
     litellm_params:
       model: anthropic/claude-haiku-5-5
       api_key: os.environ/ANTHROPIC_API_KEY
 
+  # ── Local models (Ollama via SSH tunnel) ──
+  # On VM: ssh -N -R 11434:127.0.0.1:11434 azureuser@VM_IP
+  - model_name: coder-fast
+    litellm_params:
+      model: openai/coder-fast
+      api_base: http://127.0.0.1:11434/v1
+      api_key: "ollama"
+
+  - model_name: coder
+    litellm_params:
+      model: openai/coder
+      api_base: http://127.0.0.1:11434/v1
+      api_key: "ollama"
+
+  - model_name: reason
+    litellm_params:
+      model: openai/reason
+      api_base: http://127.0.0.1:11434/v1
+      api_key: "ollama"
+
 litellm_settings:
   drop_params: true
   cache: false
   num_retries: 2
-  request_timeout: 300
+  request_timeout: 600
 
 general_settings:
-  master_key: null
+  master_key: os.environ/LITELLM_MASTER_KEY
