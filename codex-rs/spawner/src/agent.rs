@@ -75,7 +75,7 @@ pub async fn spawn_all(
                 findings_path: PathBuf::from(format!("findings-{}-{}.json", specialist.name, run)),
             };
 
-            let prompt = build_agent_prompt(specialist, &base_url, max_turns);
+            let prompt = build_agent_prompt(specialist, &base_url, max_turns, &instance.findings_path.to_string_lossy());
             let model = model.to_string();
             let findings_path = instance.findings_path.clone();
             let agent_name = instance.name.clone();
@@ -111,11 +111,12 @@ pub async fn spawn_all(
     Ok(all_findings)
 }
 
-fn build_agent_prompt(specialist: &SpecialistProfile, base_url: &str, max_turns: u32) -> String {
+fn build_agent_prompt(specialist: &SpecialistProfile, base_url: &str, max_turns: u32, findings_file: &str) -> String {
     format!(
         "You are a security assessment agent specializing in {}. \
          Your target is {}. You have {} iterations. \
          Read AGENTS.md for methodology, then focus ONLY on your specialty. \
+         IMPORTANT: Write your findings to {} (NOT findings-crapi.json). \
          Use the MCP tools: report_finding with http_request for validation, \
          log_attempt to track progress, check_progress every 5-10 iterations. \
          Report findings with full HTTP request/response proof.\n\n\
@@ -123,6 +124,7 @@ fn build_agent_prompt(specialist: &SpecialistProfile, base_url: &str, max_turns:
         specialist.vuln_class,
         base_url,
         max_turns,
+        findings_file,
         specialist.prompt,
     )
 }
