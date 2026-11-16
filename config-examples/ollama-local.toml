@@ -1,0 +1,22 @@
+# CodexSec Model Configuration — Local Model via Ollama
+# Copy this to ~/.codex/config.toml or merge with existing config.
+#
+# Prerequisites:
+#   1. Install Ollama: https://ollama.com/download
+#   2. Pull a model: ollama pull qwen3:32b
+#   3. Ollama server must be running on localhost:11434
+
+model = "qwen3:32b"
+
+# Use --oss flag when running: codex --oss
+# Or set in config:
+# oss_provider = "ollama"
+
+# Ollama is a built-in provider — no custom config needed.
+# It auto-detects at localhost:11434.
+#
+# Good local models for security testing (need tool/function calling support):
+# - qwen3:32b (strong reasoning, good tool use)
+# - llama3.3:70b (if you have the VRAM)
+# - mistral-large (good multilingual)
+# - deepseek-r1:32b (strong reasoning)

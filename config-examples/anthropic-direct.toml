@@ -1,0 +1,25 @@
+# CodexSec Model Configuration — Claude via Anthropic API (Direct)
+# Uses the CodexSec Anthropic Bridge to translate between Codex's
+# Responses API and Anthropic's Messages API.
+#
+# Prerequisites:
+#   1. Set: export ANTHROPIC_API_KEY="sk-ant-..."
+#   2. Start the bridge: python3 tools/anthropic-bridge/bridge.py
+#   3. Then run Codex as normal
+#
+# The bridge runs on localhost:8087 and translates wire formats.
+# No data goes through any third party — direct to Anthropic.
+
+model = "claude-opus-4-6"
+model_provider = "anthropic"
+
+[model_providers.anthropic]
+name = "Anthropic (via CodexSec Bridge)"
+base_url = "http://localhost:8087/v1"
+env_key = "ANTHROPIC_API_KEY"
+wire_api = "responses"
+
+# Available models:
+# model = "claude-opus-4-6"             # Most capable, deep reasoning
+# model = "claude-sonnet-4-6"           # Best balance (recommended)
+# model = "claude-haiku-4-5"            # Fastest, cheapest

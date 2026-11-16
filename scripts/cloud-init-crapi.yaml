@@ -1,0 +1,78 @@
+#cloud-config
+package_update: true
+package_upgrade: true
+
+packages:
+  - docker.io
+  - docker-compose
+  - python3
+  - python3-pip
+  - python3-venv
+  - git
+  - curl
+  - jq
+  - nmap
+  - sqlmap
+  - nikto
+  - golang-go
+  - unzip
+  - wget
+  - tmux
+
+runcmd:
+  # Enable and start Docker
+  - systemctl enable docker
+  - systemctl start docker
+  - usermod -aG docker azureuser
+
+  # Install Go-based security tools
+  - export GOPATH=/opt/go
+  - export PATH=$PATH:/opt/go/bin:/usr/local/go/bin
+  - mkdir -p /opt/go/bin
+
+  # Install latest Go (system package may be old)
+  - wget -q https://go.dev/dl/go1.23.4.linux-amd64.tar.gz -O /tmp/go.tar.gz
+  - tar -C /usr/local -xzf /tmp/go.tar.gz
+  - export PATH=$PATH:/usr/local/go/bin
+
+  # Install security tools via Go
+  - GOBIN=/usr/local/bin /usr/local/go/bin/go install github.com/projectdiscovery/httpx/cmd/httpx@latest
+  - GOBIN=/usr/local/bin /usr/local/go/bin/go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+  - GOBIN=/usr/local/bin /usr/local/go/bin/go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
+  - GOBIN=/usr/local/bin /usr/local/go/bin/go install github.com/projectdiscovery/katana/cmd/katana@latest
+  - GOBIN=/usr/local/bin /usr/local/go/bin/go install github.com/ffuf/ffuf/v2@latest
+  - GOBIN=/usr/local/bin /usr/local/go/bin/go install github.com/hahwul/dalfox/v2@latest
+  - GOBIN=/usr/local/bin /usr/local/go/bin/go install github.com/tomnomnom/waybackurls@latest
+
+  # Install Python security packages
+  - pip3 install requests beautifulsoup4 pyjwt httpx aiohttp
+
+  # Install Rust + Codex
+  - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+  - source /root/.cargo/env
+
+  # Install Codex CLI via npm (the quick path)
+  - curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+  - apt-get install -y nodejs
+  - npm install -g @openai/codex@latest
+
+  # Clone and deploy crAPI
+  - cd /opt
+  - git clone https://github.com/OWASP/crAPI.git
+  - cd /opt/crAPI/deploy/docker
+  - docker-compose -f docker-compose.yml pull
+  - docker-compose -f docker-compose.yml up -d
+
+  # Clone CodexSec
+  - cd /opt
+  - git clone https://github.com/openai/codex.git CodexSec || true
+
+  # Update nuclei templates
+  - nuclei -update-templates 2>/dev/null || true
+
+  # Schedule auto-deletion of this VM in 12 hours
+  - echo "sudo shutdown -h now" | at now + 12 hours 2>/dev/null || true
+  - (crontab -l 2>/dev/null; echo "0 $(date -u -d '+12 hours' +%H) $(date -u -d '+12 hours' +%d) $(date -u -d '+12 hours' +%m) * /sbin/shutdown -h now") | crontab - 2>/dev/null || true
+
+  # Write a flag file when setup is done
+  - echo "SETUP_COMPLETE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /opt/setup-status.txt

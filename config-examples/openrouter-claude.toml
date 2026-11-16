@@ -1,0 +1,20 @@
+# CodexSec Model Configuration — Claude via OpenRouter
+# Copy this to ~/.codex/config.toml or merge with existing config.
+#
+# Prerequisites:
+#   1. Get an OpenRouter API key at https://openrouter.ai/keys
+#   2. Set: export OPENROUTER_API_KEY="sk-or-..."
+
+model = "anthropic/claude-sonnet-4-20250514"
+model_provider = "openrouter"
+
+[model_providers.openrouter]
+name = "OpenRouter"
+base_url = "https://openrouter.ai/api/v1"
+env_key = "OPENROUTER_API_KEY"
+wire_api = "responses"
+
+# Other Claude models you can use:
+# model = "anthropic/claude-opus-4-20250514"
+# model = "anthropic/claude-haiku-4-20250514"
+# model = "anthropic/claude-sonnet-4-20250514"

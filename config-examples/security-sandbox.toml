@@ -1,0 +1,19 @@
+# CodexSec Sandbox Configuration for Security Testing
+# Merge this into your ~/.codex/config.toml
+#
+# For security testing, the agent needs network access to reach targets.
+# DangerFullAccess disables the sandbox entirely.
+#
+# Phase 2 will add target-domain-only allowlisting via the managed TCP proxy.
+# For now, scope enforcement is at the prompt level (AGENTS.md) and
+# network level (iptables/nftables rules in the Docker container).
+
+sandbox = "danger-full-access"
+
+# Auto-approve all tool calls — the agent needs to run freely.
+# In production, use "suggest" or "auto-edit" for more control.
+approval_policy = "full-auto"
+
+# Increase context for long security assessments.
+# Default compaction threshold is too low for pentesting.
+# auto_compact_token_limit = 200000

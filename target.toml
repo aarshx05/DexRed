@@ -1,0 +1,82 @@
+# CodexSec Target Configuration
+# Fill this in before each security assessment.
+
+[target]
+# Authorized target domains. The agent will ONLY make requests to these.
+domains = [
+    # "api.example.com",
+    # "dashboard.example.com",
+]
+
+# Application type: "web", "mobile", "agentic"
+# Determines which methodology modules are loaded.
+app_type = "web"
+
+# Testing methodology: "blackbox", "whitebox", "greybox"
+# blackbox = no source code, external testing only
+# whitebox = source code available, combined static + dynamic
+# greybox = some internal knowledge (API docs, architecture), external testing
+methodology = "blackbox"
+
+# Maximum agent iterations before stopping.
+max_turns = 100
+
+# Output path for structured findings.
+findings_output = "./findings.json"
+
+[target.auth]
+# Authentication for the target application (not the model provider).
+# These are injected into the agent's context so it can authenticate to the target.
+
+# Bearer token for API access
+# bearer_token_env = "TARGET_BEARER_TOKEN"
+
+# Cookie-based session
+# session_cookie = ""
+
+# Username/password (for login-form-based testing)
+# username = ""
+# password_env = "TARGET_PASSWORD"
+
+# API key
+# api_key_env = "TARGET_API_KEY"
+
+# OAuth configuration
+# oauth_client_id = ""
+# oauth_client_secret_env = "TARGET_OAUTH_SECRET"
+
+[target.scope]
+# Fine-grained scope control
+
+# Endpoints explicitly in scope (regex patterns)
+# include_paths = ["/api/.*", "/dashboard/.*"]
+
+# Endpoints explicitly out of scope (regex patterns)
+# exclude_paths = ["/api/v1/admin/.*", "/health"]
+
+# HTTP methods allowed (empty = all)
+# allowed_methods = ["GET", "POST", "PUT", "DELETE", "PATCH"]
+
+# Rate limiting: max requests per second to the target
+rate_limit = 10
+
+# Wordlists and payloads
+# custom_wordlist = "./wordlists/custom.txt"
+
+[target.context]
+# Additional context the agent should know about the target
+
+# Technology stack (helps the agent choose appropriate tests)
+# tech_stack = ["python", "django", "postgresql", "redis"]
+
+# Known API documentation URL
+# api_docs_url = "https://api.example.com/docs"
+
+# Source code path (for whitebox/greybox)
+# source_code_path = "/path/to/source"
+
+# Any specific areas of concern
+# focus_areas = ["authentication", "authorization", "file upload"]
+
+# Additional notes for the agent
+# notes = "This is a REST API with JWT auth. Focus on IDOR and auth bypass."
