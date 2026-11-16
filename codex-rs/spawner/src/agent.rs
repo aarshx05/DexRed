@@ -131,7 +131,7 @@ async fn run_agent(
     name: &str,
     prompt: &str,
     model: &str,
-    max_turns: u32,
+    _max_turns: u32,
     findings_path: &PathBuf,
 ) -> crate::anyhow::Result<Vec<Finding>> {
     let output = Command::new("codex")

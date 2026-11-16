@@ -11,75 +11,57 @@
 
 use crate::config::SpecialistProfile;
 use crate::pipeline::ReconResults;
-use std::collections::HashMap;
 
 /// Tech-stack-specific payload hints injected into specialist prompts.
 const TECH_HINTS: &[(&str, &str, &str)] = &[
-    // (tech pattern, specialist vuln_class, hint)
-    ("django", "injection",
-     "Django uses parameterized queries by default but raw SQL via .extra() and .raw() is vulnerable. "
-     "Test: ORM bypass via __regex, __contains lookups. Check for DEBUG=True (stack traces). "
-     "Django REST Framework: test serializer validation bypass, permission_classes misconfiguration."),
-
-    ("flask", "injection",
-     "Flask uses Jinja2 templates — test SSTI with {{7*7}}. Check for debug mode (Werkzeug debugger). "
-     "Flask-SQLAlchemy: text() queries may be injectable. Check for secret_key in config."),
-
-    ("express", "injection",
-     "Express/Node.js: test prototype pollution via __proto__ in JSON bodies. "
-     "MongoDB backend likely — test NoSQL injection with $gt, $ne operators. "
-     "Check for eval(), Function() usage in server code. Test path traversal with ../ in routes."),
-
-    ("spring", "injection",
-     "Spring Boot: test actuator endpoints (/actuator/env, /actuator/heapdump). "
-     "SpEL injection in expression-based annotations. Check for H2 console (/h2-console). "
-     "Mass assignment via Jackson: @JsonProperty fields may be bindable."),
-
-    ("laravel", "injection",
-     "Laravel uses Eloquent ORM but raw queries via DB::raw() are vulnerable. "
-     "Blade templates: test for unescaped output ({!! $var !!}). "
-     "Check for APP_DEBUG=true (stack traces with paths). Test artisan routes."),
-
-    ("mongodb", "injection",
-     "Primary target for NoSQL injection. Test EVERY input field with: "
-     "{\"$gt\": \"\"}, {\"$ne\": \"\"}, {\"$regex\": \".*\"}, {\"$where\": \"true\"}. "
-     "Check for aggregation pipeline injection. Test operator injection in URL params."),
-
-    ("postgresql", "injection",
-     "PostgreSQL supports stacked queries (;) — test for multi-statement injection. "
-     "pg_sleep(N) for time-based blind. COPY TO for file write. "
-     "Check for PL/pgSQL functions with EXECUTE. Test dollar-quoting bypass: $$payload$$."),
-
-    ("mysql", "injection",
-     "MySQL: SLEEP(N) for time-based blind. LOAD_FILE() for file read. INTO OUTFILE for write. "
-     "GROUP BY with FLOOR(RAND()) for error-based extraction. "
-     "Check for multi-byte character encoding bypasses (GBK)."),
-
-    ("jwt", "authentication",
-     "JWT detected — this is your primary target. Run the full JWT attack chain: "
-     "1) alg:none 2) HS256 with RS256 public key 3) kid injection 4) jku/x5u 5) weak secret brute force. "
-     "Check /jwks.json and /.well-known/jwks.json for public keys."),
-
-    ("graphql", "api_security",
-     "GraphQL detected — run introspection first: {__schema{types{name,fields{name}}}}. "
-     "Test batching (array of queries), alias-based rate limit bypass, nested query DoS. "
-     "Check for mutations that bypass permission checks."),
-
-    ("docker", "ssrf",
-     "Docker environment detected — internal services likely on Docker network. "
-     "Test SSRF to: 172.17.0.0/16 (default Docker bridge), common service ports "
-     "(5432 PostgreSQL, 27017 MongoDB, 6379 Redis, 8080 internal APIs). "
-     "Docker API: http://172.17.0.1:2375/containers/json"),
-
-    ("aws", "ssrf",
-     "AWS environment — SSRF to metadata service is critical: "
-     "http://169.254.169.254/latest/meta-data/iam/security-credentials/ for temp credentials. "
-     "IMDSv2 requires a token: PUT to /latest/api/token with X-aws-ec2-metadata-token-ttl-seconds header first."),
-
-    ("redis", "injection",
-     "Redis backend: test for SSRF to redis://localhost:6379. "
-     "If command injection exists, Redis commands: CONFIG SET dir /var/www/html, "
-     "CONFIG SET dbfilename shell.php, SET payload '<?php system($_GET[\"cmd\"]); ?>', BGSAVE."),
+    ("django", "injection", concat!(
+        "Django uses parameterized queries by default but raw SQL via .extra() and .raw() is vulnerable. ",
+        "Test: ORM bypass via __regex, __contains lookups. Check for DEBUG=True (stack traces). ",
+        "Django REST Framework: test serializer validation bypass, permission_classes misconfiguration.")),
+    ("flask", "injection", concat!(
+        "Flask uses Jinja2 templates - test SSTI with {{7*7}}. Check for debug mode (Werkzeug debugger). ",
+        "Flask-SQLAlchemy: text() queries may be injectable. Check for secret_key in config.")),
+    ("express", "injection", concat!(
+        "Express/Node.js: test prototype pollution via __proto__ in JSON bodies. ",
+        "MongoDB backend likely - test NoSQL injection with $gt, $ne operators. ",
+        "Check for eval(), Function() usage in server code. Test path traversal with ../ in routes.")),
+    ("spring", "injection", concat!(
+        "Spring Boot: test actuator endpoints (/actuator/env, /actuator/heapdump). ",
+        "SpEL injection in expression-based annotations. Check for H2 console (/h2-console). ",
+        "Mass assignment via Jackson: @JsonProperty fields may be bindable.")),
+    ("laravel", "injection", concat!(
+        "Laravel uses Eloquent ORM but raw queries via DB::raw() are vulnerable. ",
+        "Blade templates: test for unescaped output. ",
+        "Check for APP_DEBUG=true (stack traces with paths). Test artisan routes.")),
+    ("mongodb", "injection", concat!(
+        "Primary target for NoSQL injection. Test EVERY input field with: ",
+        "$gt, $ne, $regex, $where operators. ",
+        "Check for aggregation pipeline injection. Test operator injection in URL params.")),
+    ("postgresql", "injection", concat!(
+        "PostgreSQL supports stacked queries (;) - test for multi-statement injection. ",
+        "pg_sleep(N) for time-based blind. COPY TO for file write. ",
+        "Check for PL/pgSQL functions with EXECUTE.")),
+    ("mysql", "injection", concat!(
+        "MySQL: SLEEP(N) for time-based blind. LOAD_FILE() for file read. INTO OUTFILE for write. ",
+        "GROUP BY with FLOOR(RAND()) for error-based extraction.")),
+    ("jwt", "authentication", concat!(
+        "JWT detected - run the full JWT attack chain: ",
+        "1) alg:none 2) HS256 with RS256 public key 3) kid injection 4) jku/x5u 5) weak secret. ",
+        "Check /jwks.json and /.well-known/jwks.json for public keys.")),
+    ("graphql", "api_security", concat!(
+        "GraphQL detected - run introspection first. ",
+        "Test batching (array of queries), alias-based rate limit bypass, nested query DoS. ",
+        "Check for mutations that bypass permission checks.")),
+    ("docker", "ssrf", concat!(
+        "Docker environment detected - internal services likely on Docker network. ",
+        "Test SSRF to: 172.17.0.0/16 (default Docker bridge), common service ports. ",
+        "Docker API: http://172.17.0.1:2375/containers/json")),
+    ("aws", "ssrf", concat!(
+        "AWS environment - SSRF to metadata service is critical: ",
+        "http://169.254.169.254/latest/meta-data/iam/security-credentials/ for temp credentials.")),
+    ("redis", "injection", concat!(
+        "Redis backend: test for SSRF to redis://localhost:6379. ",
+        "If command injection exists, Redis commands: CONFIG SET dir, SET payload, BGSAVE.")),
 ];
 
 /// Assemble a specialist's prompt dynamically based on recon results.
@@ -148,10 +130,10 @@ fn get_tech_hints(vuln_class: &str, tech_stack: &[String]) -> Vec<String> {
     hints
 }
 
-fn get_relevant_endpoints(
+fn get_relevant_endpoints<'a>(
     specialist: &SpecialistProfile,
-    recon: &ReconResults,
-) -> Vec<&crate::pipeline::ReconEndpoint> {
+    recon: &'a ReconResults,
+) -> Vec<&'a crate::pipeline::ReconEndpoint> {
     recon
         .endpoints
         .iter()

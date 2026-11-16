@@ -116,7 +116,7 @@ pub async fn run_recon_phase(
                     recon.endpoints.len(), recon.tech_stack.len());
                 return Ok(recon);
             }
-            Ok(recon) if attempt < MAX_RECON_RETRIES => {
+            Ok(_recon) if attempt < MAX_RECON_RETRIES => {
                 tracing::warn!("Recon returned 0 endpoints on attempt {}, retrying...", attempt);
                 continue;
             }

@@ -4,9 +4,9 @@
 //! matches signals to specialist types, applies priority ordering and
 //! hard cap from config.
 
-use crate::config::{SpecialistProfile, TargetConfig};
+use crate::config::TargetConfig;
 use crate::pipeline::ReconResults;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::Path;
 
 const PRIORITY_ORDER: &[&str] = &[

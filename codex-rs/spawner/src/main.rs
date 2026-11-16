@@ -132,7 +132,7 @@ async fn main() -> anyhow::Result<()> {
         let specialists: Vec<config::SpecialistProfile> = selected.iter().filter_map(|s| {
             let path = cli.agents.join(&s.profile_file);
             std::fs::read_to_string(&path).ok().map(|prompt| {
-                let assignment = alloy.get_specialist(&s.alloy_key);
+                let _assignment = alloy.get_specialist(&s.alloy_key);
                 config::SpecialistProfile {
                     name: s.name.clone(),
                     vuln_class: s.name.clone(),
