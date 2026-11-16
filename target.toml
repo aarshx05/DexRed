@@ -60,6 +60,15 @@ findings_output = "./findings.json"
 # Rate limiting: max requests per second to the target
 rate_limit = 10
 
+# Maximum specialist agents to spawn (0 = no limit).
+# Pipeline selects specialists by relevance — this caps how many run.
+# Useful for cost control or limited resources.
+# max_specialists = 6
+
+# Force specific specialists (overrides auto-selection).
+# Leave empty to let the pipeline decide based on app_type + recon.
+# force_specialists = ["auth", "injection", "access-control"]
+
 # Wordlists and payloads
 # custom_wordlist = "./wordlists/custom.txt"
 

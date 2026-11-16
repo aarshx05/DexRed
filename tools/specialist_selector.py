@@ -145,12 +145,25 @@ def select_specialists(target_path: str = "target.toml", recon_path: str = "reco
 
     # Read target config
     app_type = "web"
+    max_specialists = 0
+    force_specialists = []
     try:
         with open(target_path, "rb") as f:
             config = tomllib.load(f)
-            app_type = config.get("target", {}).get("app_type", "web")
+            target = config.get("target", {})
+            app_type = target.get("app_type", "web")
+            scope = target.get("scope", {})
+            max_specialists = scope.get("max_specialists", 0)
+            force_specialists = scope.get("force_specialists", [])
     except (FileNotFoundError, Exception):
         pass
+
+    # If force_specialists is set, use exactly those — skip auto-selection
+    if force_specialists:
+        print(f"  Using forced specialists: {force_specialists}", file=sys.stderr)
+        selected = set(force_specialists)
+        # Skip signal analysis, go straight to filtering
+        return _build_specialist_list(selected, max_specialists)
 
     # Start with base specialists for this app type
     selected = set(APP_TYPE_BASE.get(app_type, APP_TYPE_BASE["web"]))
@@ -183,10 +196,26 @@ def select_specialists(target_path: str = "target.toml", recon_path: str = "reco
         if signal in signal_lower:
             selected.add(specialist)
 
-    # Filter to only specialists that have profile files
+    return _build_specialist_list(selected, max_specialists)
+
+
+# Priority order: base specialists first, then signal-triggered ones
+PRIORITY_ORDER = [
+    "auth", "injection", "access-control", "api-security", "ssrf",
+    "business-logic", "info-disclosure", "file-upload", "mobile",
+    "agentic", "websocket", "cache-poisoning", "http-smuggling",
+]
+
+
+def _build_specialist_list(selected: set, max_specialists: int = 0) -> list[dict]:
+    """Filter to available profiles and apply the hard cap."""
     agents_dir = Path("agents/specialists")
     available = []
-    for spec in sorted(selected):
+
+    # Sort by priority
+    ordered = sorted(selected, key=lambda s: PRIORITY_ORDER.index(s) if s in PRIORITY_ORDER else 99)
+
+    for spec in ordered:
         profile = PROFILE_MAP.get(spec, f"{spec}-specialist")
         profile_path = agents_dir / f"{profile}.md"
         if profile_path.exists():
@@ -196,8 +225,13 @@ def select_specialists(target_path: str = "target.toml", recon_path: str = "reco
                 "alloy_key": ALLOY_MAP.get(spec, "default"),
             })
         else:
-            # Specialist selected but no profile file — skip with warning
             print(f"  WARNING: {spec} selected but agents/specialists/{profile}.md not found, skipping", file=sys.stderr)
+
+    # Apply hard cap
+    if max_specialists > 0 and len(available) > max_specialists:
+        dropped = available[max_specialists:]
+        available = available[:max_specialists]
+        print(f"  Hard cap: keeping {max_specialists} of {max_specialists + len(dropped)} specialists. Dropped: {[d['name'] for d in dropped]}", file=sys.stderr)
 
     return available
 
