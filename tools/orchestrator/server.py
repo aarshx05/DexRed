@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""CodexSec Phase 2 Orchestrator — MCP Server
+"""DexRed Phase 2 Orchestrator — MCP Server
 
-Unified MCP server that replaces Phase 1's report-finding server. Provides:
-- Finding reporting with auto-validation (HTTP replay)
+Unified MCP server providing:
+- Finding reporting with LLM judge validation
 - Assessment state tracking (SQLite)
 - Stuck detection with actionable warnings
 - Per-endpoint circuit breaker
@@ -18,6 +18,17 @@ import hashlib
 import sqlite3
 import re
 import urllib.request
+
+# Add project root to path so we can import the validator module
+_project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+if _project_root not in sys.path:
+    sys.path.insert(0, os.path.join(_project_root, "tools"))
+
+try:
+    from validator import validate_finding as _validate_finding
+    USE_LLM_JUDGE = True
+except ImportError:
+    USE_LLM_JUDGE = False
 import urllib.error
 from datetime import datetime, timezone, timedelta
 
@@ -393,7 +404,15 @@ def handle_report_finding(db, p):
     if db.execute("SELECT 1 FROM findings WHERE id=?", (fid,)).fetchone():
         return {"status": "duplicate", "message": f"Already reported: {title} at {endpoint}", "finding_id": fid}
 
-    validation = validate_finding_http({"http_request": http_req, "http_response": http_resp, "cwe": cwe}) if http_req else {"validated": False, "reason": "No HTTP request"}
+    finding_for_validation = {
+        "title": title, "severity": severity, "cwe": cwe, "endpoint": endpoint,
+        "description": p.get("description", ""), "proof_of_concept": p.get("proof_of_concept", ""),
+        "http_request": http_req, "http_response": http_resp,
+    }
+    if USE_LLM_JUDGE:
+        validation = _validate_finding(finding_for_validation) if http_req else {"validated": False, "reason": "No HTTP request"}
+    else:
+        validation = validate_finding_http(finding_for_validation) if http_req else {"validated": False, "reason": "No HTTP request"}
     validated = 1 if validation.get("validated") is True else 0
 
     db.execute("""
@@ -579,7 +598,11 @@ def handle_validate_finding(db, p):
     row = db.execute("SELECT * FROM findings WHERE id=?", (fid,)).fetchone()
     if not row:
         return {"status": "error", "message": f"Finding {fid} not found"}
-    validation = validate_finding_http(dict(row))
+    finding_dict = dict(row)
+    if USE_LLM_JUDGE:
+        validation = _validate_finding(finding_dict)
+    else:
+        validation = validate_finding_http(finding_dict)
     ts = now_iso()
     validated = 1 if validation.get("validated") is True else 0
     db.execute("UPDATE findings SET validated=?, validated_at=?, validation_result=? WHERE id=?",

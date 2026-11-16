@@ -53,7 +53,9 @@ RUN python -m venv /opt/sectools && \
         httpx[http2] \
         pycryptodome \
         websockets \
-        graphql-core
+        graphql-core \
+        litellm \
+        playwright
 
 # ============================================================
 # Stage 4: Final runtime image
