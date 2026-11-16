@@ -1,0 +1,21 @@
+[package]
+name = "dexred-spawner"
+version = "0.1.0"
+edition = "2021"
+description = "DexRed Best-of-N agent spawner — orchestrates parallel security assessment agents"
+
+[[bin]]
+name = "dexred-spawner"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+tokio = { version = "1", features = ["full"] }
+sha2 = "0.10"
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+clap = { version = "4", features = ["derive"] }
+regex-lite = "0.1"

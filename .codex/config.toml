@@ -13,3 +13,10 @@ type = "stdio"
 command = "python3"
 args = ["tools/orchestrator/server.py"]
 enabled = true
+
+# Phase 3: technique knowledge base (RAG)
+[mcp_servers.dexred-rag]
+type = "stdio"
+command = "python3"
+args = ["tools/rag/server.py"]
+enabled = true
