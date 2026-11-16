@@ -161,7 +161,7 @@ fn build_signal_text(recon: &ReconResults) -> String {
         text.push(' ');
     }
     for a in &recon.auth_methods {
-        text.push_str(a);
+        text.push_str(&a.to_string());
         text.push(' ');
     }
     text
@@ -185,7 +185,7 @@ mod tests {
                 tags: tags.into_iter().map(String::from).collect(),
             }).collect(),
             tech_stack: tech.into_iter().map(String::from).collect(),
-            auth_methods: vec!["jwt".to_string()],
+            auth_methods: vec![serde_json::Value::String("jwt".to_string())],
             api_docs_found: false,
         }
     }

@@ -17,7 +17,7 @@ use tracing::info;
 pub struct ReconResults {
     pub endpoints: Vec<ReconEndpoint>,
     pub tech_stack: Vec<String>,
-    pub auth_methods: Vec<String>,
+    pub auth_methods: Vec<serde_json::Value>,
     pub api_docs_found: bool,
 }
 
@@ -211,7 +211,7 @@ pub async fn run_hunt_phase(
              --- END RECON ---",
             specialist.prompt,
             recon.tech_stack.join(", "),
-            recon.auth_methods.join(", "),
+            recon.auth_methods.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(", "),
             relevant.len(),
             endpoints_context,
         );

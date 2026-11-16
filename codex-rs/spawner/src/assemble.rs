@@ -101,7 +101,7 @@ pub fn assemble_prompt(
              Auth methods: {}\n\
              Endpoints:\n{}\n--- END RECON ---",
             relevant_endpoints.len(),
-            recon.auth_methods.join(", "),
+            recon.auth_methods.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(", "),
             ep_list,
         ));
     }
