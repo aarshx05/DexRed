@@ -540,9 +540,8 @@ pub(crate) async fn run_turn(
     let mut guardian_budget_compacted = false;
     let mut unfinished_plan_id = None;
 
-    // DexRed: agent-loop-level security assessment monitors.
-    let mut dexred_stuck_detector = crate::security::stuck_detector::StuckDetector::new();
-    let mut dexred_circuit_breaker = crate::security::circuit_breaker::CircuitBreaker::new();
+    // DexRed: store security monitors in extension data so drain_in_flight can access them.
+    turn_context.extension_data.insert(crate::security::DexRedMonitors::new());
 
     loop {
         // Note that pending_input would be something like a message the user
@@ -702,24 +701,28 @@ pub(crate) async fn run_turn(
                 can_drain_pending_input = true;
 
                 // DexRed: update stuck detector after each sampling iteration.
-                dexred_stuck_detector.record_iteration("", "", !model_needs_follow_up);
-                match dexred_stuck_detector.check() {
-                    crate::security::stuck_detector::StuckAction::Warn(w) => {
-                        tracing::warn!(
-                            "[DexRed] Stuck detected ({}): {}",
-                            match w.kind {
-                                crate::security::stuck_detector::StuckKind::SameEndpoint => "same_endpoint",
-                                crate::security::stuck_detector::StuckKind::ErrorLoop => "error_loop",
-                                crate::security::stuck_detector::StuckKind::NoProgress => "no_progress",
-                                crate::security::stuck_detector::StuckKind::TechniqueExhaustion => "technique_exhaustion",
-                            },
-                            w.message,
-                        );
+                if let Some(monitors) = turn_context.extension_data.get::<crate::security::DexRedMonitors>() {
+                    if let Ok(mut stuck) = monitors.stuck.lock() {
+                        stuck.record_iteration("", "", !model_needs_follow_up);
+                        match stuck.check() {
+                            crate::security::stuck_detector::StuckAction::Warn(w) => {
+                                tracing::warn!(
+                                    "[DexRed] Stuck ({}): {}",
+                                    match w.kind {
+                                        crate::security::stuck_detector::StuckKind::SameEndpoint => "same_endpoint",
+                                        crate::security::stuck_detector::StuckKind::ErrorLoop => "error_loop",
+                                        crate::security::stuck_detector::StuckKind::NoProgress => "no_progress",
+                                        crate::security::stuck_detector::StuckKind::TechniqueExhaustion => "technique_exhaustion",
+                                    },
+                                    w.message,
+                                );
+                            }
+                            crate::security::stuck_detector::StuckAction::Restart(reason) => {
+                                tracing::error!("[DexRed] Restart requested: {}", reason);
+                            }
+                            crate::security::stuck_detector::StuckAction::Continue => {}
+                        }
                     }
-                    crate::security::stuck_detector::StuckAction::Restart(reason) => {
-                        tracing::error!("[DexRed] Restart requested: {}", reason);
-                    }
-                    crate::security::stuck_detector::StuckAction::Continue => {}
                 }
 
                 // Process async hooks only after sampling and its tools have finished.
@@ -2932,9 +2935,18 @@ async fn drain_in_flight(
     step_context: &StepContext,
 ) {
     let turn_context = &step_context.turn;
+
+    // DexRed: retrieve security monitors from extension data (no signature change).
+    let dexred_monitors = turn_context.extension_data.get::<crate::security::DexRedMonitors>();
+
     while let Some(res) = in_flight.next().await {
         match res {
             Ok(envelope) => {
+                // DexRed: inspect each tool result for circuit breaker patterns.
+                if let Some(ref monitors) = dexred_monitors {
+                    dexred_inspect_tool_result(&envelope.item, monitors);
+                }
+
                 mark_thread_memory_mode_polluted_if_external_context(
                     sess.as_ref(),
                     turn_context.as_ref(),
@@ -2952,6 +2964,52 @@ async fn drain_in_flight(
                 error_or_panic(format!("in-flight tool future failed during drain: {err}"));
             }
         }
+    }
+}
+
+/// DexRed: inspect a tool result for circuit breaker patterns and update monitors.
+fn dexred_inspect_tool_result(
+    item: &codex_protocol::models::ResponseItem,
+    monitors: &crate::security::DexRedMonitors,
+) {
+    use crate::security::circuit_breaker::{CircuitBreaker, CircuitState, ToolOutputClass};
+    use codex_protocol::models::{FunctionCallOutputBody, ResponseItem};
+
+    let output_text = match item {
+        ResponseItem::FunctionCallOutput { output, .. }
+        | ResponseItem::CustomToolCallOutput { output, .. } => match &output.body {
+            FunctionCallOutputBody::Text(s) => s.as_str(),
+            _ => return,
+        },
+        _ => return,
+    };
+
+    let classification = CircuitBreaker::classify_tool_output(output_text);
+    if classification != ToolOutputClass::BlockableFailure {
+        // Normal or ignorable — record success if we can find the endpoint.
+        if let Some(endpoint) = CircuitBreaker::extract_endpoint(output_text) {
+            if let Ok(mut circuit) = monitors.circuit.lock() {
+                circuit.record_success(&endpoint);
+            }
+            if let Ok(mut stuck) = monitors.stuck.lock() {
+                stuck.record_iteration(&endpoint, "tool_success", false);
+            }
+        }
+        return;
+    }
+
+    // Blockable failure — update circuit breaker and stuck detector.
+    let endpoint = CircuitBreaker::extract_endpoint(output_text)
+        .unwrap_or_else(|| "unknown".to_string());
+
+    if let Ok(mut circuit) = monitors.circuit.lock() {
+        let state = circuit.record_failure(&endpoint);
+        if matches!(state, CircuitState::Open { .. }) {
+            tracing::warn!("[DexRed] Circuit OPEN for {endpoint} — consecutive failures hit threshold");
+        }
+    }
+    if let Ok(mut stuck) = monitors.stuck.lock() {
+        stuck.record_iteration(&endpoint, "blocked", true);
     }
 }
 
