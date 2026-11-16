@@ -1,0 +1,61 @@
+# CodexSec Target Configuration — OWASP crAPI
+# crAPI (Completely Ridiculous API) is a deliberately vulnerable application.
+# https://github.com/OWASP/crAPI
+
+[target]
+domains = [
+    "localhost",
+    "127.0.0.1",
+]
+
+app_type = "web"
+methodology = "blackbox"
+max_turns = 80
+findings_output = "./findings-crapi.json"
+
+[target.auth]
+# crAPI default test credentials
+# Register a new user first, then use the JWT token
+# Default community user: name@example.com / password (create via /identity/api/auth/signup)
+
+[target.scope]
+include_paths = [
+    "/identity/.*",
+    "/community/.*",
+    "/workshop/.*",
+]
+rate_limit = 20
+
+[target.context]
+tech_stack = ["python", "java", "nodejs", "postgresql", "mongodb", "mailhog"]
+api_docs_url = "http://localhost:8888"
+notes = """
+crAPI has three microservices:
+1. Identity service (/identity/api/) — user registration, login, JWT auth, password reset
+2. Community service (/community/api/) — forums, posts, comments
+3. Workshop service (/workshop/api/) — vehicle management, mechanic services, orders
+
+Known vulnerability categories to test:
+- BOLA (Broken Object Level Authorization) — IDOR on vehicle/order/user IDs
+- Broken Authentication — weak JWT, predictable tokens, no rate limiting
+- Excessive Data Exposure — API returns more data than needed
+- Lack of Resources & Rate Limiting — no throttling on sensitive endpoints
+- BFLA (Broken Function Level Authorization) — accessing admin functions
+- Mass Assignment — modifying fields not intended to be user-controlled
+- SSRF — server-side request forgery via mechanic service
+- SQL Injection — in certain endpoints
+- NoSQL Injection — MongoDB-backed endpoints
+- JWT vulnerabilities — weak secret, algorithm confusion
+
+crAPI mailhog is at port 8025 for catching password reset emails.
+"""
+
+focus_areas = [
+    "authentication",
+    "authorization",
+    "idor",
+    "injection",
+    "mass_assignment",
+    "ssrf",
+    "jwt",
+]

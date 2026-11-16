@@ -1,0 +1,11 @@
+# CodexSec Model Configuration — OpenAI Direct
+# Copy this to ~/.codex/config.toml or merge with existing config.
+#
+# Prerequisites:
+#   1. Get an OpenAI API key at https://platform.openai.com/api-keys
+#   2. Set: export OPENAI_API_KEY="sk-..."
+
+model = "o4-mini"
+
+# No custom provider needed — OpenAI is the built-in default.
+# Other models: gpt-4.1, o4-mini, codex-1

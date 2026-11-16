@@ -1,0 +1,15 @@
+# CodexSec Model Configuration — Local Model via LM Studio
+# Copy this to ~/.codex/config.toml or merge with existing config.
+#
+# Prerequisites:
+#   1. Install LM Studio: https://lmstudio.ai
+#   2. Load a model with function calling support
+#   3. Start the local server (default: localhost:1234)
+
+model = "your-model-name-here"
+
+# Use --oss flag with lmstudio provider:
+# codex --oss --local-provider lmstudio
+
+# LM Studio is a built-in provider — no custom config needed.
+# It auto-detects at localhost:1234.

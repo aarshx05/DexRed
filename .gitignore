@@ -94,3 +94,23 @@ CHANGELOG.ignore.md
 # Python bytecode files
 __pycache__/
 *.pyc
+
+# === CodexSec additions ===
+# Assessment output (regenerated each run)
+findings-*.json
+assessment.log
+start.sh
+state.db
+state.db-wal
+state.db-shm
+
+# VM state files
+.last-vm-ip
+.last-rg
+
+# Keep our AGENTS.md (override the .claude/ ignore above)
+!AGENTS.md
+
+# Keep our .codex config
+!.codex/
+!.codex/config.toml

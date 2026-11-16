@@ -1,0 +1,15 @@
+# CodexSec Project-Level Configuration
+# This config is loaded automatically when running Codex from this directory.
+
+# Sandbox: full network access for security testing.
+sandbox = "danger-full-access"
+
+# Project documentation: load AGENTS.md (security methodology)
+project_doc_max_bytes = 65536
+
+# MCP servers: Phase 2 orchestrator (state tracking, validation, circuit breaker)
+[mcp_servers.codexsec-orchestrator]
+type = "stdio"
+command = "python3"
+args = ["tools/orchestrator/server.py"]
+enabled = true
